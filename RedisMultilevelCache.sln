@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.27428.2037
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestHarness", "TestHarness\TestHarness.csproj", "{9141F124-2A57-4E2A-A2E4-C1349AEC5BD7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RedisMultilevelCache", "RedisMultilevelCache\RedisMultilevelCache.csproj", "{AB7CE4DE-347A-468A-8B35-6DF42999F48B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9141F124-2A57-4E2A-A2E4-C1349AEC5BD7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9141F124-2A57-4E2A-A2E4-C1349AEC5BD7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9141F124-2A57-4E2A-A2E4-C1349AEC5BD7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9141F124-2A57-4E2A-A2E4-C1349AEC5BD7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AB7CE4DE-347A-468A-8B35-6DF42999F48B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AB7CE4DE-347A-468A-8B35-6DF42999F48B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AB7CE4DE-347A-468A-8B35-6DF42999F48B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AB7CE4DE-347A-468A-8B35-6DF42999F48B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {AB1EB4E6-507F-4CF9-BFCD-ABBD18CB167E}
+	EndGlobalSection
+EndGlobal
