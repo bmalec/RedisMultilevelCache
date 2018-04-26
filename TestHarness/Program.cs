@@ -19,11 +19,21 @@ namespace TestHarness
 
     static void Main(string[] args)
     {
+      if (args.Length < 1)
+      {
+        Console.WriteLine("Usage: TestHarness redis_address[:redis_port]");
+        Console.WriteLine("Examples:");
+        Console.WriteLine("  Use locally installed Redis server, default port of 6379:  TestHarness localhost");
+        Console.WriteLine("  Use Redis cluster which includes a node at cacheserver, port 6382:  TestHarness cacheserver:6382");
+        return;
+      }
+
       var cache = new MultilevelCacheProvider(args[0]);
 
       Console.WriteLine("Loading cache data...");
 
-      // Prefill the cache with data
+      // Prefill the cache with data, using parallel operations to better 
+      // simulate a multi-threaded client
 
       Parallel.For(0, KEY_COUNT, (i) =>
       {
@@ -63,13 +73,6 @@ namespace TestHarness
 
       Console.WriteLine($"{opsPerSecond.ToString("N1")} op/sec");
       Console.WriteLine($"{bytesPerSecond.ToString("N1")} bytes/sec");
-
-
-      int j = 1;
-      
-
-
-
     }
 
 
@@ -81,6 +84,11 @@ namespace TestHarness
       }
     }
 
+
+    /// <summary>
+    /// Random op generator, generates 95% reads and 5% updates
+    /// </summary>
+    /// <returns></returns>
     private static Operation GetRandomOp()
     {
       Operation op = Operation.Read;

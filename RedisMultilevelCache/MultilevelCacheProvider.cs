@@ -14,10 +14,25 @@ namespace RedisMultilevelCache
 
     private class LocalCacheEntry<T>
     {
+      /// <summary>
+      /// Hashslot of this key this value is stored under
+      /// </summary>
       public ushort KeyHashSlot { get; private set; }
+      /// <summary>
+      /// Time this entry was written to the cache
+      /// </summary>
       public long Timestamp { get; private set; }
+      /// <summary>
+      /// Actual data value associated with this key
+      /// </summary>
       public T Data { get; private set; }
 
+      /// <summary>
+      /// Public constructor
+      /// </summary>
+      /// <param name="keyHashSlot">Hashslot of the key associated with this entry</param>
+      /// <param name="timestamp">Time the entry was written to the cache</param>
+      /// <param name="data">Actual data to associated with the key</param>
       public LocalCacheEntry(ushort keyHashSlot, long timestamp, T data)
       {
         KeyHashSlot = keyHashSlot;
@@ -26,7 +41,13 @@ namespace RedisMultilevelCache
       }
     }
 
+    /// <summary>
+    /// This GUID is used to uniqely identify the cache instance
+    /// </summary>
     private readonly Guid _instanceId = Guid.NewGuid();
+    /// <summary>
+    /// Serialization provider to encode/decode byte arrays sent to Redis
+    /// </summary>
     private readonly ISerializationProvider _serializationProvider;
 
     /// <summary>
@@ -37,17 +58,36 @@ namespace RedisMultilevelCache
     /// </remarks>
     private readonly long[] _lastUpdated = new long[HASH_SLOT_COUNT];  // the array element index is the hash slot; for hash slot 3142 look up _lastUpdatedDictionary[3142]
 
+    /// <summary>
+    /// StackExchange.Redis connection to the Redis server
+    /// </summary>
     private readonly ConnectionMultiplexer _redisConnection;
+
+    /// <summary>
+    /// StackExchange.Redis database 
+    /// </summary>
     private readonly IDatabase _redisDb;
+
+    /// <summary>
+    /// In-process cache used as the L1 cache
+    /// </summary>
     private readonly MemoryCache _inProcessCache = MemoryCache.Default;
 
 
-
+    /// <summary>
+    /// Public constructor
+    /// </summary>
+    /// <param name="redisConnectionString">StackExchange.Redis connection string</param>
     public MultilevelCacheProvider(string redisConnectionString) : this(redisConnectionString, new DefaultSerializationProvider())
     {
     }
 
 
+    /// <summary>
+    /// Public constructor
+    /// </summary>
+    /// <param name="redisConnectionString">StackExchange.Redis connection string</param>
+    /// <param name="serializationProvider">Alternate serialization provider</param>
     public MultilevelCacheProvider(string redisConnectionString, ISerializationProvider serializationProvider)
     {
       _serializationProvider = serializationProvider ?? throw new ArgumentNullException(nameof(serializationProvider));
@@ -65,8 +105,8 @@ namespace RedisMultilevelCache
     /// <summary>
     /// Message handler for hash key invalidation messages
     /// </summary>
-    /// <param name="channel"></param>
-    /// <param name="message"></param>
+    /// <param name="channel">Redis pub/sub channel name</param>
+    /// <param name="message">Pub/sub message</param>
     private void DataSynchronizationMessageHandler(RedisChannel channel, RedisValue message)
     {
       // Early out, if channel name doesn't match our sync channel
@@ -81,6 +121,8 @@ namespace RedisMultilevelCache
       var dataSyncMessage = DataSyncMessage.Deserialize(message);
 
       // and update the appropriate _lastUpdated element with the current timestamp
+      // Invalidate.Exchange() would make more sense here, but the lock statement
+      // makes the purpose more evident for an example
 
       lock (_lastUpdated)
       {
@@ -104,8 +146,8 @@ namespace RedisMultilevelCache
       if (value == null) throw new ArgumentNullException(nameof(value));
       if (ttl.TotalSeconds < 1) throw new ArgumentNullException(nameof(ttl));
 
-      // Get the current timestamp before we do anything else.  Decrement it by one so any sync messages processed after this line will force
-      // an immediate expiration of the key's hash slot
+      // Get the current timestamp before we do anything else.  Decrement it by one so any sync messages processed during 
+      // this method call will force an immediate expiration of the key's hash slot
 
       var timestamp = Stopwatch.GetTimestamp() - 1;
 
@@ -120,6 +162,9 @@ namespace RedisMultilevelCache
         _serializationProvider.Serialize<T>(ms, value);
         serializedData = ms.ToArray();
       }
+
+      // Execute the Redis SET and PUBLISH operations in one round trip using Lua
+      // (Could use StackExchange.Redis batch here, instead)
 
       string luaScript = @"
         redis.call('SET', KEYS[1], ARGV[1], 'EX',  ARGV[2])
@@ -140,11 +185,20 @@ namespace RedisMultilevelCache
     }
 
 
+    /// <summary>
+    /// Retrieve an item from the cache
+    /// </summary>
+    /// <typeparam name="T">Object type to return</typeparam>
+    /// <param name="key">Key</param>
+    /// <returns>Object of type T associated with the key</returns>
     public T Get<T>(string key)
     {
+      // Get the current timestamp before we do anything else.  Decrement it by one so any sync messages processed during 
+      // this method call will force an immediate expiration of the key's hash slot
+
       var timestamp = Stopwatch.GetTimestamp() - 1;
 
-      int keyHashSlot = -1; 
+      int keyHashSlot = -1;  // -1 is used as a sentinel value used to determine if the key's hash slot has already been computed
 
       // attempt to retreive value from the in-process cache
 
@@ -156,7 +210,13 @@ namespace RedisMultilevelCache
         // need to check if the entry may be stale and we
         // need to re-read from Redis
 
-        keyHashSlot = HashSlotCalculator.CalculateHashSlot(key);
+        keyHashSlot = inProcessCacheEntry.KeyHashSlot;
+
+        // Check the timestamp of the cache entry versus the _lastUpdated array
+        // If the timestamp of the cache entry is greater than what's in _lastUpdated, 
+        // then we can just return the value from the in-process cache
+
+        // Could use and Interlocked operation here, but lock is a more obvious in intent
 
         lock (_lastUpdated)
         {
@@ -169,7 +229,7 @@ namespace RedisMultilevelCache
 
       // if we've made it to here, the key is either not in the in-process cache or 
       // the in-process cache entry is stale.  In either case we need to hit Redis to 
-      // get the correct value
+      // get the correct value, and the key's remaining TTL in Redis
 
       T value = default(T);
 
@@ -188,24 +248,28 @@ namespace RedisMultilevelCache
 
         if (serializedData.Length > 0)
         {
+          // Deserialize the bytes returned from Redis
+
           using (MemoryStream ms = new MemoryStream(serializedData))
           {
             value = _serializationProvider.Deserialize<T>(ms);
           }
+
+          // Don't want to have to recalculate the hashslot twice, so test if it's already
+          // been computed
 
           if (keyHashSlot == -1)
           {
             keyHashSlot = HashSlotCalculator.CalculateHashSlot(key);
           }
 
+          // Update the in-proces cache with the value retrieved from Redis
+
           _inProcessCache.Set(key, new LocalCacheEntry<T>((ushort) keyHashSlot, timestamp, value), DateTimeOffset.UtcNow.AddSeconds((double) results[1]));
         }
       }
 
-
-
       return (T) inProcessCacheEntry.Data;
-
     }
 
 
